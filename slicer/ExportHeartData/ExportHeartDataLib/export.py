@@ -183,6 +183,7 @@ class Exporter(object):
 
   def _composeExport(self):
     referenceValveModel = getFirstValveModelNodeMatchingPhaseAndType(self.referencePhase, self._valveType)
+    referenceTimePoint = ExportItem.currentTimePoint(referenceValveModel)
     ExportItem.probeToRasTransform = cloneMRMLNode(referenceValveModel.getProbeToRasTransformNode())
     voxelSpacing = getFinalVoxelSpacing(self.voxelSpacing, self.minValveHeightVxl, referenceValveModel)
     self.initializeReferenceVolumeNode(referenceValveModel, voxelSpacing, self.volumeDimensions)
@@ -191,7 +192,7 @@ class Exporter(object):
 
     self._builder = ExportBuilder()
 
-    self._addCardiacFramesToExport(referenceValveModel)
+    self._addCardiacFramesToExport(referenceValveModel, referenceTimePoint)
 
     if self.exportAnnulusContourLabel or self.exportAnnulusContourModel:
       self._addAnnulusToExport()
@@ -205,13 +206,15 @@ class Exporter(object):
     if self.exportSegmentation:
       self._addSegmentationToExport()
 
-  def _addCardiacFramesToExport(self, referenceValveModel):
+  def _addCardiacFramesToExport(self, referenceValveModel, referenceTimePoint):
     for valveDataClass in getValveModelsWithPhaseNames(self.cardiacPhases, self.valveType):
+      isReferenceFrame = valveDataClass.valveModel is referenceValveModel and                          valveDataClass.timePoint == referenceTimePoint
       self._builder.add_export_item(
         PhaseFrame(valveDataClass.valveModel,
-                   valveDataClass.valveModel is referenceValveModel,
+                   isReferenceFrame,
                    phase=valveDataClass.phase,
-                   suffix=valveDataClass.suffix)
+                   suffix=valveDataClass.suffix,
+                   timePoint=valveDataClass.timePoint)
       )
 
   def _addAnnulusToExport(self):
@@ -221,7 +224,8 @@ class Exporter(object):
                 self.exportAnnulusContourLabel,
                 self.exportAnnulusContourModel,
                 phase=valveDataClass.phase,
-                suffix=valveDataClass.suffix)
+                suffix=valveDataClass.suffix,
+                   timePoint=valveDataClass.timePoint)
       )
 
   def _addLandmarkLabelsToExport(self):
@@ -230,7 +234,8 @@ class Exporter(object):
         LandmarkLabels(valveDataClass.valveModel,
                        self.annulusLabels,
                        phase=valveDataClass.phase,
-                       suffix=valveDataClass.suffix)
+                       suffix=valveDataClass.suffix,
+                   timePoint=valveDataClass.timePoint)
       )
 
   def _addLandmarksToExport(self):
@@ -238,7 +243,8 @@ class Exporter(object):
       self._builder.add_export_item(
         Landmarks(valveDataClass.valveModel,
                   phase=valveDataClass.phase,
-                  suffix=valveDataClass.suffix)
+                  suffix=valveDataClass.suffix,
+                   timePoint=valveDataClass.timePoint)
       )
 
   def _addSegmentationToExport(self):
@@ -247,7 +253,8 @@ class Exporter(object):
         Segmentation(valveDataClass.valveModel,
                      self.oneFilePerSegment,
                      phase=valveDataClass.phase,
-                     suffix=valveDataClass.suffix)
+                     suffix=valveDataClass.suffix,
+                   timePoint=valveDataClass.timePoint)
       )
 
   def loadScene(self, mrbFile):

@@ -15,8 +15,8 @@ class Landmarks(ExportItem):
     return valid, \
            None if valid else f"No Annulus Labels Markup Node found for phase {getValvePhaseShortName(self._valveModel)}"
 
-  def __init__(self, valveModel, phase=None, suffix=""):
-    super(Landmarks, self).__init__(valveModel, phase, suffix)
+  def __init__(self, valveModel, phase=None, suffix="", timePoint=None):
+    super(Landmarks, self).__init__(valveModel, phase, suffix, timePoint)
 
   def __call__(self):
     logger = self.getLogger()
@@ -40,8 +40,8 @@ class LandmarkLabels(ExportItem):
                 f"{[f'{a}={b}' for a,b in zip(self.landmarkLabels, positions)]}"
       return False, message
 
-  def __init__(self, valveModel, landmarkLabels, phase=None, suffix=""):
-    super(LandmarkLabels, self).__init__(valveModel, phase, suffix)
+  def __init__(self, valveModel, landmarkLabels, phase=None, suffix="", timePoint=None):
+    super(LandmarkLabels, self).__init__(valveModel, phase, suffix, timePoint)
     self.landmarkLabels = landmarkLabels if landmarkLabels else []
 
   def __call__(self):
@@ -70,8 +70,8 @@ class Segmentation(ExportItem):
     return valid, None if valid else "No leaflet segmentation node could be found " \
                                      "for phase {getValvePhaseShortName(self._valveModel)}"
 
-  def __init__(self, valveModel, oneFilePerSegment, phase=None, suffix=""):
-    super(Segmentation, self).__init__(valveModel, phase, suffix)
+  def __init__(self, valveModel, oneFilePerSegment, phase=None, suffix="", timePoint=None):
+    super(Segmentation, self).__init__(valveModel, phase, suffix, timePoint)
     self._oneFilePerSegment = oneFilePerSegment
 
   def __call__(self):
@@ -126,8 +126,8 @@ class Annulus(ExportItem):
     return valid, None if valid else "No annulus contour model node could be found " \
                                      "for phase {getValvePhaseShortName(self._valveModel)}"
 
-  def __init__(self, valveModel, asLabel=False, asModel=False, phase=None, suffix=""):
-    super(Annulus, self).__init__(valveModel, phase, suffix)
+  def __init__(self, valveModel, asLabel=False, asModel=False, phase=None, suffix="", timePoint=None):
+    super(Annulus, self).__init__(valveModel, phase, suffix, timePoint)
     self._outputFormats = []
     if asLabel is True:
       self._outputFormats.append(".nii.gz")
@@ -142,7 +142,7 @@ class Annulus(ExportItem):
       if outputFormat == ".vtk":
         from HeartValveLib.util import createTubeModelFromPointArray
         node = \
-          createTubeModelFromPointArray(slicer.util.arrayFromMarkupsCurvePoints(self._valveModel.annulusContourCurve),
+          createTubeModelFromPointArray(slicer.util.arrayFromMarkupsCurvePoints(self._valveModel.annulusContourCurveNode),
                                         radius=self._valveModel.getAnnulusContourRadius())[0]
       else:
         node = self.getAnnulusLabel()
@@ -207,8 +207,8 @@ class PhaseFrame(ExportItem):
       return False, exc
     return True, None
 
-  def __init__(self, valveModel, isReferenceFrame=False, phase=None, suffix=""):
-    super(PhaseFrame, self).__init__(valveModel, phase, suffix)
+  def __init__(self, valveModel, isReferenceFrame=False, phase=None, suffix="", timePoint=None):
+    super(PhaseFrame, self).__init__(valveModel, phase, suffix, timePoint)
     self._isReferenceVolume = isReferenceFrame
 
   def getVolumeFrame(self):

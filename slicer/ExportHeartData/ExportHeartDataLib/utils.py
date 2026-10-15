@@ -32,7 +32,7 @@ def getValveThickness(valveModel):
   import slicer
   import HeartValveLib
   import ExportHeartDataLib.segmentation_utils as SegmentationHelper
-  annulusPoints = slicer.util.arrayFromMarkupsCurvePoints(valveModel.annulusContourCurve).T
+  annulusPoints = slicer.util.arrayFromMarkupsCurvePoints(valveModel.annulusContourCurveNode).T
   [planePosition, planeNormal] = valveModel.getAnnulusContourPlane()
   [annulusPointsProjected, _, _] = HeartValveLib.getPointsProjectedToPlane(annulusPoints, planePosition, planeNormal)
   annulusAreaPolyData = createPolyDataFromPolygon(annulusPointsProjected.T)
@@ -102,7 +102,7 @@ def getSegmentationFromAnnulusContourNode(valveModel, referenceVolume):
   import slicer
   import ExportHeartDataLib.segmentation_utils as SegmentationHelper
   from HeartValveLib.util import createTubeModelFromPointArray
-  annulusMarkupsCurve = valveModel.annulusContourCurve
+  annulusMarkupsCurve = valveModel.annulusContourCurveNode
   annulusModelNode = \
     createTubeModelFromPointArray(slicer.util.arrayFromMarkupsCurvePoints(annulusMarkupsCurve),
                                   radius=valveModel.getAnnulusContourRadius() * 2)[0]
@@ -229,6 +229,7 @@ class ValveDataClass:
   valveModel: ValveModel
   phase: str
   suffix: str = ""
+  timePoint: int = -1  # valve browser item number of the requested phase (-1: valve not in sequence format)
 
 
 def getValveModelsWithPhaseNames(phaseNames, valveType):
@@ -236,35 +237,41 @@ def getValveModelsWithPhaseNames(phaseNames, valveType):
     :param phaseNames: list of strings (e.g. ["MS-1", "MS", "MS+1"])
     :param valveType:
 
+    In the sequence format a valve has one proxy node for all of its time points: the returned valve
+    models can be the same object and each ValveDataClass carries the time point of its phase. The valve
+    browser is left at the time point of the last phase.
     :return: list of ValveDataClass objects
   """
-  from HeartValveLib.helpers import getAllHeartValveModelsForValveType
-  valveModels = getAllHeartValveModelsForValveType(valveType)
+  from HeartValveLib.helpers import getFirstValveModelNodeMatchingPhaseAndType,     getFirstValveModelNodeMatchingSequenceIndexAndValveType, valveTimePointSelected
+  from ExportHeartDataLib.base import ExportItem
   cache = {}
   vms = []
   for shortName in phaseNames:
     shortName = shortName.replace(" ", "").strip() # strip white spaces e.g. when 'MS + 1 '
     prefix, incrementor = getPhaseShortNameAndNumber(shortName)
     try:
-      valveModel = cache[prefix]
+      valveModel, timePoint = cache[prefix]
     except KeyError:
-      valveModel = getFirstValveModelMatchingShortName(valveModels, prefix)
-      cache[prefix] = valveModel
+      valveModel = getFirstValveModelNodeMatchingPhaseAndType(prefix, valveType)
+      timePoint = ExportItem.currentTimePoint(valveModel)
+      cache[prefix] = (valveModel, timePoint)
 
     if int(incrementor) != 0:
-      from HeartValveLib.helpers import getFirstValveModelNodeMatchingSequenceIndexAndValveType
-      valveModel = getFirstValveModelNodeMatchingSequenceIndexAndValveType(
-          valveModel.getValveVolumeSequenceIndex() + int(incrementor), valveModel.getValveType())
-    vms.append(ValveDataClass(valveModel, prefix, incrementor if int(incrementor) != 0 else ""))
+      with valveTimePointSelected(valveModel.heartValveNode, timePoint):
+        frameNumber = valveModel.getValveVolumeSequenceIndex() + int(incrementor)
+      valveModel = getFirstValveModelNodeMatchingSequenceIndexAndValveType(frameNumber, valveModel.getValveType())
+      timePoint = ExportItem.currentTimePoint(valveModel)
+    vms.append(ValveDataClass(valveModel, prefix, incrementor if int(incrementor) != 0 else "", timePoint))
   return vms
 
 
-def getFirstValveModelMatchingShortName(valveModels, shortname):
-  from HeartValveLib.helpers import getValvePhaseShortName
-  for valveModel in valveModels:
-    if getValvePhaseShortName(valveModel) == shortname:
-      return valveModel
-  raise ValueError(f"Could not find valve with cardiac cycle phase {shortname}")
+def valveHasPhase(valveModel, phaseShortName):
+  """ True if the valve is annotated with the given phase: at any of its time points in the sequence
+  format, or as its phase otherwise. """
+  from HeartValveLib.helpers import getValveBrowserNode, getValveTimePointsMatchingPhase, getValvePhaseShortName
+  if getValveBrowserNode(valveModel.heartValveNode):
+    return len(getValveTimePointsMatchingPhase(valveModel.heartValveNode, phaseShortName)) > 0
+  return getValvePhaseShortName(valveModel) == phaseShortName
 
 
 def getPhaseShortNameAndNumber(shortName):

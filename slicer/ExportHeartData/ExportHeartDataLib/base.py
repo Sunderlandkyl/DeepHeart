@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import contextlib
 import logging
 import slicer
 from ExportHeartDataLib.constants import APPLICATION_NAME
@@ -17,13 +18,15 @@ class ExportBuilder(object):
 
   def export(self):
     for item in self._items:
-      item()
+      with item.timePointShown():
+        item()
 
   def requirementsSatisfied(self):
     satisfied = []
     messages = []
     for item in self._items:
-      valid, message = item.verify()
+      with item.timePointShown():
+        valid, message = item.verify()
       satisfied.append(valid)
       if message:
         messages.append(message)
@@ -45,6 +48,14 @@ class ExportItem(ABC):
       raise NoAssociatedFrameNumberFound(f"No associated frame number found for {valveModel.getCardiacCyclePhase()}")
     return frameNumber
 
+  @staticmethod
+  def currentTimePoint(valveModel):
+    """Time point (valve browser item number) the valve shows now; -1 for a valve that is not in the
+    sequence format."""
+    from HeartValveLib.helpers import getValveBrowserNode
+    browserNode = getValveBrowserNode(valveModel.heartValveNode)
+    return browserNode.GetSelectedItemNumber() if browserNode else -1
+
   @classmethod
   def cleanup(cls):
     if cls.probeToRasTransform is not None:
@@ -63,11 +74,20 @@ class ExportItem(ABC):
 
   @property
   def phase(self):
-    assert self._valveModel is not None
-    if self._phase:
-      return self._phase
-    from HeartValveLib.helpers import getValvePhaseShortName
-    return getValvePhaseShortName(self._valveModel)
+    return self._phase
+
+  @property
+  def timePoint(self):
+    return self._timePoint
+
+  @contextlib.contextmanager
+  def timePointShown(self):
+    """Show the time point this item exports for the duration of the block (in the sequence format a
+    valve has one proxy node for all of its time points); the time point shown before is restored after.
+    """
+    from HeartValveLib.helpers import valveTimePointSelected
+    with valveTimePointSelected(self._valveModel.heartValveNode, self._timePoint):
+      yield
 
   @staticmethod
   def getLogger():
@@ -87,10 +107,21 @@ class ExportItem(ABC):
       cls.exportSummarizer.add_export_item(kind, outputFile)
     return slicer.util.saveNode(node, str(outputFile))
 
-  def __init__(self, valveModel, phase=None, suffix=""):
+  def __init__(self, valveModel, phase=None, suffix="", timePoint=None):
+    """
+    :param timePoint: time point (valve browser item number) of the valve this item exports; the time
+      point the valve shows now when not given
+    """
+    assert valveModel is not None
     self._valveModel = valveModel
-    self._phase = phase
     self._suffix = suffix
+    self._timePoint = timePoint if timePoint is not None else self.currentTimePoint(valveModel)
+    if phase:
+      self._phase = phase
+    else:
+      from HeartValveLib.helpers import getValvePhaseShortName
+      with self.timePointShown():
+        self._phase = getValvePhaseShortName(valveModel)
 
   @abstractmethod
   def __call__(self):

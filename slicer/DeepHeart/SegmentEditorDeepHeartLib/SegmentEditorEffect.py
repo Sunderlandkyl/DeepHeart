@@ -12,6 +12,7 @@ import HeartValveLib
 from MONAILabel import MONAILabelLogic
 from MONAILabelLib import MONAILabelClient
 from ExportHeartDataLib.export import Exporter, ExportItem
+from ExportHeartDataLib.utils import valveHasPhase
 
 import time
 
@@ -267,8 +268,7 @@ class SegmentEditorEffect(AbstractScriptedSegmentEditorEffect):
     for idx, selector in enumerate(selectors):
     # check if selected phase is right phase
       vm = HeartValveLib.HeartValves.getValveModel(selector.currentNode())
-      selectedPhaseShortname = getValvePhaseShortName(vm)
-      differentPhaseSelected.append(selectedPhaseShortname != cardiacPhases[idx])
+      differentPhaseSelected.append(not valveHasPhase(vm, cardiacPhases[idx]))
 
     if any(different is True for different in differentPhaseSelected):
       if not slicer.util.confirmYesNoDisplay(
@@ -439,19 +439,36 @@ def getInferenceExport(valveModels,
 
     from HeartValveLib.helpers import getFirstValveModelNodeMatchingPhaseAndType, getValvePhaseShortName
     from ExportHeartDataLib.utils import cloneMRMLNode
+    # In the sequence format a valve has one proxy node for all of its time points: find the time point
+    # of each requested phase and export the valve at that time point
+    from HeartValveLib.helpers import getValveBrowserNode, getValveTimePointsMatchingPhase, valveTimePointSelected
+
+    def timePointOfPhase(valveModel, phaseShortName):
+      if not getValveBrowserNode(valveModel.heartValveNode):
+        return -1
+      timePoints = getValveTimePointsMatchingPhase(valveModel.heartValveNode, phaseShortName)
+      if not timePoints:
+        raise ValueError(f"{valveModel.heartValveNode.GetName()} has no time point for phase {phaseShortName}")
+      return timePoints[0]
+
     referenceValveModel = valveModels[0]
-    ExportItem.probeToRasTransform = cloneMRMLNode(referenceValveModel.getProbeToRasTransformNode())
-    Exporter.initializeReferenceVolumeNode(referenceValveModel, voxel_spacing, volume_dimensions)
+    referenceTimePoint = timePointOfPhase(referenceValveModel, cardiac_phase_frames[0])
+    with valveTimePointSelected(referenceValveModel.heartValveNode, referenceTimePoint):
+      ExportItem.probeToRasTransform = cloneMRMLNode(referenceValveModel.getProbeToRasTransformNode())
+      Exporter.initializeReferenceVolumeNode(referenceValveModel, voxel_spacing, volume_dimensions)
 
     assert ExportItem.requiredAttributesSet()
 
     from ExportHeartDataLib.items import Annulus, PhaseFrame, LandmarkLabels
     for valveModel, phaseShortName in zip(valveModels, cardiac_phase_frames):
-      verifyAndRunItemExport(PhaseFrame(valveModel, valveModel is referenceValveModel, phase=phaseShortName))
+      timePoint = timePointOfPhase(valveModel, phaseShortName)
+      isReferenceFrame = valveModel is referenceValveModel and timePoint == referenceTimePoint
+      verifyAndRunItemExport(PhaseFrame(valveModel, isReferenceFrame, phase=phaseShortName, timePoint=timePoint))
       if annulus_contour_label and phaseShortName in annulus_phases:
-        verifyAndRunItemExport(Annulus(valveModel, asLabel=True, phase=phaseShortName))
+        verifyAndRunItemExport(Annulus(valveModel, asLabel=True, phase=phaseShortName, timePoint=timePoint))
       if landmark_labels and phaseShortName in landmark_label_phases:
-        verifyAndRunItemExport(LandmarkLabels(valveModel, landmark_labels, phase=phaseShortName))
+        verifyAndRunItemExport(LandmarkLabels(valveModel, landmark_labels, phase=phaseShortName,
+                                              timePoint=timePoint))
   except Exception as exc:
     raise exc
   finally:
@@ -461,11 +478,12 @@ def getInferenceExport(valveModels,
 
 
 def verifyAndRunItemExport(item):
-  valid, message = item.verify()
-  if valid:
-    item()
-  else:
-    raise ValueError(f"{item.__class__.__name__}: {message}")
+  with item.timePointShown():
+    valid, message = item.verify()
+    if valid:
+      item()
+    else:
+      raise ValueError(f"{item.__class__.__name__}: {message}")
 
 
 def _stackVolumes(volumes: list, out_dir: str):

@@ -14,7 +14,6 @@ set(MODULE_PYTHON_SCRIPTS
   ExportHeartDataLib/segmentation_utils
   ExportHeartDataLib/summary
   ExportHeartDataLib/utils
-  Testing/ExportHeartDataTest
   )
 
 #-----------------------------------------------------------------------------
@@ -23,3 +22,7 @@ slicerMacroBuildScriptedModule(
   SCRIPTS ${MODULE_PYTHON_SCRIPTS}
   WITH_GENERIC_TESTS
   )
+
+if(BUILD_TESTING)
+  add_subdirectory(Testing)
+endif()
